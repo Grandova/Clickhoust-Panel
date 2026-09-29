@@ -1,0 +1,34 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-server
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ch_data:/var/lib/clickhouse
+      - ch_log:/var/log/clickhouse-server
+
+  clickhouse-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clickhouse-manager
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    command: ["-port", "8080", "-ch-host", "clickhouse", "-ch-port", "9000"]
+    depends_on:
+      - clickhouse
+    volumes:
+      - manager_data:/opt/clickhouse-manager/data
+
+volumes:
+  ch_data:
+  ch_log:
+  manager_data:

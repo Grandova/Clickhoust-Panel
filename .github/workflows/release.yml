@@ -1,0 +1,102 @@
+name: Verify and release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:latest
+        env:
+          CLICKHOUSE_SKIP_USER_SETUP: '1'
+        ports:
+          - 9000:9000
+          - 8123:8123
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+      - name: Embed frontend
+        run: |
+          rm -rf backend/web/dist
+          cp -r frontend/dist backend/web/dist
+      - name: Go checks
+        working-directory: backend
+        run: |
+          test -z "$(gofmt -l cmd/ internal/)"
+          go vet ./...
+          go test ./internal/clickhouse -list TestClickHouseIntegration | grep -qx TestClickHouseIntegration
+          go test -race ./...
+      - name: ClickHouse native interoperability
+        working-directory: backend
+        env:
+          CH_TEST_HOST: 127.0.0.1
+          CH_TEST_PORT: '9000'
+          CH_TEST_USER: default
+          CH_TEST_PROTOCOL: native
+        run: go test -race ./internal/clickhouse -run TestClickHouseIntegration -v
+      - name: ClickHouse HTTP interoperability
+        working-directory: backend
+        env:
+          CH_TEST_HOST: 127.0.0.1
+          CH_TEST_PORT: '8123'
+          CH_TEST_USER: default
+          CH_TEST_PROTOCOL: http
+        run: go test -race ./internal/clickhouse -run TestClickHouseIntegration -v
+      - name: Verify Docker build
+        run: docker build -t clickhouse-manager:test .
+      - name: Package Linux binaries
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: backend
+        run: |
+          mkdir -p ../release_assets
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags='-s -w' -o clickhouse-manager ./cmd/server
+            tar -czf "../release_assets/clickhouse-manager-${GITHUB_REF_NAME}-linux-${arch}.tar.gz" clickhouse-manager
+          done
+          cd ../release_assets
+          sha256sum *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: release-assets
+          path: release_assets/
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release_assets
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" release_assets/* --clobber || gh release create "$GITHUB_REF_NAME" release_assets/* --verify-tag --title "ClickHouse Manager $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md

@@ -1,0 +1,12 @@
+.git
+frontend/node_modules
+frontend/dist
+backend/data
+backend/web/dist
+backend/clickhouse-manager*
+**/*.exe
+**/*.db
+**/*.log
+**/jwt-secret
+build
+release_assets

@@ -1,0 +1,44 @@
+# Compiled Binaries & Executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.bin
+clickhouse-manager
+clickhouse-manager-*
+backend/clickhouse-manager*
+release_assets/
+dist-release/
+build/
+
+# Local SQLite databases & test logs
+*.db
+*.db-shm
+*.db-wal
+*.log
+backend/data/
+
+# Frontend dependencies & build output
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test files & test artifacts
+jwt-secret
+*.test
+*.out
+*.coverprofile
+
+# OS / Editor temporary files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
